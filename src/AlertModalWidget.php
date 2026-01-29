@@ -95,7 +95,7 @@ class AlertModalWidget extends Widget
                         <button type="button" class="' . $this->cancelButtonClass . '" data-dismiss="modal">' .
             Html::encode($this->cancelButtonLabel) .
             '</button>
-                        <button type="button" class="' . $this->confirmButtonClass . ' alert-modal-confirm" data-href="#">' .
+                        <button type="button" class="' . $this->confirmButtonClass . ' alert-modal-confirm" data-href="#" data-method="">' .
             Html::encode($this->confirmButtonLabel) .
             '</button>
                     </div>
@@ -108,6 +108,7 @@ class AlertModalWidget extends Widget
 
     protected function registerCss()
     {
+        // CSS remains the same as before
         $css = <<<CSS
 /* Alert Modal Styles */
 .alert-modal-overlay {
@@ -345,13 +346,16 @@ CSS;
         $defaultConfirmLabel = addslashes($this->confirmButtonLabel);
         $defaultIconType = addslashes($this->iconType);
         $defaultIconColor = addslashes($this->iconColor);
+        $widgetId = $this->getId();
+        $modalId = $this->_modalId;
+        $triggerSelector = $this->triggerSelector;
 
         // Icon mapping for JavaScript
         $iconMappingJson = json_encode($this->iconMapping);
 
         $js = <<<JS
 // Create a unique class name for this widget instance
-class {$this->_jsClassId} {
+class AlertModal_{$widgetId} {
     constructor(modalId) {
         this.modal = document.getElementById(modalId);
         this.overlay = this.modal;
@@ -383,21 +387,28 @@ class {$this->_jsClassId} {
         // Handle confirm button click
         this.confirmButton.addEventListener('click', (e) => {
             e.preventDefault();
+            e.stopPropagation();
+            
             const href = this.confirmButton.getAttribute('data-href');
             const method = this.confirmButton.getAttribute('data-method');
             
-            if (!href || href === '#') {
+            console.log('Confirm button clicked');
+            console.log('href:', href);
+            console.log('method:', method);
+            
+            if (!href || href === '#' || href === 'javascript:void(0)') {
+                console.log('No valid href');
                 this.hide();
                 return;
             }
 
-            if (method && method.toLowerCase() === 'post') {
+            if (method && method.trim().toLowerCase() === 'post') {
+                console.log('Submitting POST request to:', href);
                 this.submitPostForm(href);
             } else {
+                console.log('Navigating via GET to:', href);
                 window.location.href = href;
             }
-            
-            this.hide();
         });
     }
 
@@ -416,33 +427,83 @@ class {$this->_jsClassId} {
     }
 
     submitPostForm(href) {
+        console.log('Creating POST form for:', href);
+        
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = href;
         form.style.display = 'none';
         document.body.appendChild(form);
 
-        // Add CSRF token if available
-        const csrfParam = document.querySelector('meta[name="csrf-param"]');
-        const csrfToken = document.querySelector('meta[name="csrf-token"]');
-        if (csrfParam && csrfToken) {
+        // Add CSRF token if available (Yii2 standard)
+        // Try multiple ways to find CSRF token
+        let csrfToken = null;
+        let csrfParam = '_csrf';
+        
+        // Method 1: Check meta tags
+        const csrfMetaParam = document.querySelector('meta[name="csrf-param"]');
+        const csrfMetaToken = document.querySelector('meta[name="csrf-token"]');
+        
+        if (csrfMetaParam && csrfMetaToken) {
+            csrfParam = csrfMetaParam.getAttribute('content');
+            csrfToken = csrfMetaToken.getAttribute('content');
+        }
+        
+        // Method 2: Check for hidden input
+        if (!csrfToken) {
+            const csrfInput = document.querySelector('input[name="_csrf"]');
+            if (csrfInput) {
+                csrfToken = csrfInput.value;
+            }
+        }
+        
+        // Method 3: Check for meta tag with csrf-token name
+        if (!csrfToken) {
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            if (csrfMeta) {
+                csrfToken = csrfMeta.getAttribute('content');
+            }
+        }
+        
+        console.log('CSRF Param:', csrfParam);
+        console.log('CSRF Token:', csrfToken);
+        
+        if (csrfToken) {
+            console.log('Adding CSRF token to form');
             const input = document.createElement('input');
             input.type = 'hidden';
-            input.name = csrfParam.getAttribute('content');
-            input.value = csrfToken.getAttribute('content');
+            input.name = csrfParam;
+            input.value = csrfToken;
             form.appendChild(input);
+        } else {
+            console.warn('No CSRF token found! POST request may fail.');
         }
 
-        // Add additional parameters
-        const params = JSON.parse(this.confirmButton.getAttribute('data-params') || '{}');
-        Object.keys(params).forEach(key => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key;
-            input.value = params[key];
-            form.appendChild(input);
-        });
+        // Add additional parameters from data-params attribute
+        const paramsAttr = this.confirmButton.getAttribute('data-params');
+        if (paramsAttr) {
+            try {
+                const params = JSON.parse(paramsAttr);
+                console.log('Additional params:', params);
+                Object.keys(params).forEach(key => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = params[key];
+                    form.appendChild(input);
+                });
+            } catch (e) {
+                console.error('Failed to parse data-params:', e);
+            }
+        }
 
+        console.log('Form HTML:', form.outerHTML);
+        console.log('Submitting form...');
+        
+        // Hide modal before submitting
+        this.hide();
+        
+        // Submit the form
         form.submit();
     }
 
@@ -462,10 +523,8 @@ class {$this->_jsClassId} {
         }
 
         if (data.confirmClass !== undefined) {
-            // Keep base classes and add the custom class
             this.confirmButton.className = 'alert-modal-btn-confirm alert-modal-confirm ' + data.confirmClass;
         } else {
-            // Reset to default classes
             this.confirmButton.className = 'alert-modal-btn-confirm alert-modal-confirm {$this->confirmButtonClass}';
         }
 
@@ -488,56 +547,95 @@ class {$this->_jsClassId} {
 
         if (data.href !== undefined) {
             this.confirmButton.setAttribute('data-href', data.href);
+        } else {
+            this.confirmButton.setAttribute('data-href', '#');
         }
 
-        if (data.method !== undefined) {
+        if (data.method !== undefined && data.method.trim() !== '') {
             this.confirmButton.setAttribute('data-method', data.method);
         } else {
-            this.confirmButton.removeAttribute('data-method');
+            this.confirmButton.setAttribute('data-method', '');
         }
 
         if (data.params !== undefined) {
             this.confirmButton.setAttribute('data-params', JSON.stringify(data.params));
+        } else {
+            this.confirmButton.removeAttribute('data-params');
         }
     }
 }
 
 // Initialize modal instance
-const alertModal_{$this->getId()} = new {$this->_jsClassId}('{$this->_modalId}');
+const alertModal_{$widgetId} = new AlertModal_{$widgetId}('{$modalId}');
 
 // Handle trigger clicks
 document.addEventListener('click', function(e) {
-    const trigger = e.target.closest('{$this->triggerSelector}');
-    if (!trigger || !trigger.matches('a')) return;
-    
-    e.preventDefault();
-    
-    // Get data from trigger
-    const getData = (attr) => trigger.getAttribute('data-' + attr);
-    
-    const data = {
-        title: getData('alert-modal-title') || '{$defaultTitle}',
-        body: getData('alert-modal-body') || getData('confirm') || '{$defaultBody}',
-        confirmLabel: getData('alert-modal-confirm-label') || getData('confirm-label') || '{$defaultConfirmLabel}',
-        confirmClass: getData('alert-modal-confirm-class') || '{$this->confirmButtonClass}',
-        icon: getData('alert-modal-icon') || '{$defaultIconType}',
-        iconColor: getData('alert-modal-icon-color') || '{$defaultIconColor}',
-        href: trigger.getAttribute('href'),
-        method: getData('method'),
-        params: JSON.parse(getData('params') || '{}')
-    };
-    
-    // Legacy support
-    if (!data.title && getData('title')) {
-        data.title = getData('title');
+    // Check if clicked element or its parent has the trigger selector
+    let trigger = e.target;
+    while (trigger && trigger !== document) {
+        if (trigger.matches && trigger.matches('{$triggerSelector}')) {
+            // Found a trigger element
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('Modal trigger clicked:', trigger);
+            
+            // Get href from the trigger
+            let href = trigger.getAttribute('href');
+            if (!href || href === '#') {
+                href = trigger.getAttribute('data-href');
+            }
+            
+            console.log('Original href:', href);
+            
+            if (!href || href === '#' || href === 'javascript:void(0)') {
+                console.warn('No valid href found for modal trigger');
+                return;
+            }
+            
+            // Decode URL if it's encoded
+            try {
+                href = decodeURIComponent(href);
+            } catch (e) {
+                // If decoding fails, use original
+                console.log('URL decode failed, using original');
+            }
+            
+            console.log('Decoded href:', href);
+            
+            // Get data from trigger
+            const getData = (attr) => trigger.getAttribute('data-' + attr);
+            
+            const data = {
+                title: getData('alert-modal-title') || '{$defaultTitle}',
+                body: getData('alert-modal-body') || getData('confirm') || '{$defaultBody}',
+                confirmLabel: getData('alert-modal-confirm-label') || getData('confirm-label') || '{$defaultConfirmLabel}',
+                confirmClass: getData('alert-modal-confirm-class') || '{$this->confirmButtonClass}',
+                icon: getData('alert-modal-icon') || '{$defaultIconType}',
+                iconColor: getData('alert-modal-icon-color') || '{$defaultIconColor}',
+                href: href,
+                method: getData('method'),
+                params: JSON.parse(getData('params') || '{}')
+            };
+            
+            console.log('Modal data:', data);
+            
+            // Legacy support
+            if (!data.title && getData('title')) {
+                data.title = getData('title');
+            }
+            
+            // Update modal content
+            alertModal_{$widgetId}.updateContent(data);
+            
+            // Show modal
+            alertModal_{$widgetId}.show();
+            
+            return; // Stop processing
+        }
+        trigger = trigger.parentNode;
     }
-    
-    // Update modal content
-    alertModal_{$this->getId()}.updateContent(data);
-    
-    // Show modal
-    alertModal_{$this->getId()}.show();
-});
+}, true); // Use capture phase to catch events early
 JS;
 
         $this->getView()->registerJs($js, View::POS_READY, 'alert-modal-script-' . $this->getId());
