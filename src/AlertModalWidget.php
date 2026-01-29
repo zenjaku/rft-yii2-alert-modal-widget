@@ -1,6 +1,6 @@
 <?php
 
-namespace rft\AlertModalWidget;
+namespace rft\alertmodalwidget;
 
 use yii\base\Widget;
 use yii\helpers\Html;
