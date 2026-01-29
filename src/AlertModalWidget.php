@@ -508,7 +508,7 @@ const alertModal_{$this->getId()} = new {$this->_jsClassId}('{$this->_modalId}')
 // Handle trigger clicks
 document.addEventListener('click', function(e) {
     const trigger = e.target.closest('{$this->triggerSelector}');
-    if (!trigger) return;
+    if (!trigger || !trigger.matches('a')) return;
     
     e.preventDefault();
     
