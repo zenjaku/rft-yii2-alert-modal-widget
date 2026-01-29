@@ -108,7 +108,6 @@ class AlertModalWidget extends Widget
 
     protected function registerCss()
     {
-        // CSS remains the same as before
         $css = <<<CSS
 /* Alert Modal Styles */
 .alert-modal-overlay {
@@ -392,21 +391,14 @@ class AlertModal_{$widgetId} {
             const href = this.confirmButton.getAttribute('data-href');
             const method = this.confirmButton.getAttribute('data-method');
             
-            console.log('Confirm button clicked');
-            console.log('href:', href);
-            console.log('method:', method);
-            
             if (!href || href === '#' || href === 'javascript:void(0)') {
-                console.log('No valid href');
                 this.hide();
                 return;
             }
 
             if (method && method.trim().toLowerCase() === 'post') {
-                console.log('Submitting POST request to:', href);
                 this.submitPostForm(href);
             } else {
-                console.log('Navigating via GET to:', href);
                 window.location.href = href;
             }
         });
@@ -427,8 +419,6 @@ class AlertModal_{$widgetId} {
     }
 
     submitPostForm(href) {
-        console.log('Creating POST form for:', href);
-        
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = href;
@@ -436,7 +426,6 @@ class AlertModal_{$widgetId} {
         document.body.appendChild(form);
 
         // Add CSRF token if available (Yii2 standard)
-        // Try multiple ways to find CSRF token
         let csrfToken = null;
         let csrfParam = '_csrf';
         
@@ -465,18 +454,12 @@ class AlertModal_{$widgetId} {
             }
         }
         
-        console.log('CSRF Param:', csrfParam);
-        console.log('CSRF Token:', csrfToken);
-        
         if (csrfToken) {
-            console.log('Adding CSRF token to form');
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = csrfParam;
             input.value = csrfToken;
             form.appendChild(input);
-        } else {
-            console.warn('No CSRF token found! POST request may fail.');
         }
 
         // Add additional parameters from data-params attribute
@@ -484,7 +467,6 @@ class AlertModal_{$widgetId} {
         if (paramsAttr) {
             try {
                 const params = JSON.parse(paramsAttr);
-                console.log('Additional params:', params);
                 Object.keys(params).forEach(key => {
                     const input = document.createElement('input');
                     input.type = 'hidden';
@@ -493,13 +475,10 @@ class AlertModal_{$widgetId} {
                     form.appendChild(input);
                 });
             } catch (e) {
-                console.error('Failed to parse data-params:', e);
+                // Silently ignore parse errors
             }
         }
 
-        console.log('Form HTML:', form.outerHTML);
-        console.log('Submitting form...');
-        
         // Hide modal before submitting
         this.hide();
         
@@ -551,7 +530,8 @@ class AlertModal_{$widgetId} {
             this.confirmButton.setAttribute('data-href', '#');
         }
 
-        if (data.method !== undefined && data.method.trim() !== '') {
+        // Safely handle method attribute
+        if (data.method !== undefined && data.method !== null && data.method !== '' && typeof data.method === 'string') {
             this.confirmButton.setAttribute('data-method', data.method);
         } else {
             this.confirmButton.setAttribute('data-method', '');
@@ -578,18 +558,13 @@ document.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('Modal trigger clicked:', trigger);
-            
             // Get href from the trigger
             let href = trigger.getAttribute('href');
             if (!href || href === '#') {
                 href = trigger.getAttribute('data-href');
             }
             
-            console.log('Original href:', href);
-            
             if (!href || href === '#' || href === 'javascript:void(0)') {
-                console.warn('No valid href found for modal trigger');
                 return;
             }
             
@@ -598,13 +573,21 @@ document.addEventListener('click', function(e) {
                 href = decodeURIComponent(href);
             } catch (e) {
                 // If decoding fails, use original
-                console.log('URL decode failed, using original');
             }
             
-            console.log('Decoded href:', href);
-            
             // Get data from trigger
-            const getData = (attr) => trigger.getAttribute('data-' + attr);
+            const getData = (attr) => {
+                const value = trigger.getAttribute('data-' + attr);
+                return value;
+            };
+            
+            // Parse params safely
+            let params = {};
+            try {
+                params = JSON.parse(getData('params') || '{}');
+            } catch (e) {
+                // Silently ignore parse errors
+            }
             
             const data = {
                 title: getData('alert-modal-title') || '{$defaultTitle}',
@@ -615,10 +598,8 @@ document.addEventListener('click', function(e) {
                 iconColor: getData('alert-modal-icon-color') || '{$defaultIconColor}',
                 href: href,
                 method: getData('method'),
-                params: JSON.parse(getData('params') || '{}')
+                params: params
             };
-            
-            console.log('Modal data:', data);
             
             // Legacy support
             if (!data.title && getData('title')) {
